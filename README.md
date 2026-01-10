@@ -7,63 +7,68 @@ Generic Terraform modules for deploying ArgoCD-managed workloads on Rackspace Sp
 | Module | Description |
 |--------|-------------|
 | [cloudspace](./cloudspace) | Rackspace Spot managed Kubernetes cluster and node pool |
-| [cluster-base](./cluster-base) | ArgoCD installation via Helm |
-| [argocd-bootstrap](./argocd-bootstrap) | Generic ArgoCD Application bootstrap (App-of-Apps pattern) |
+| [cluster-base](./cluster-base) | ArgoCD installation + optional bootstrap Application |
 
-## Architecture
+## 2-Stage Architecture
 
-This repo contains **generic** infrastructure modules only. Application-specific resources (namespaces, secrets, configs) should live in the downstream application repositories.
-
-```
-spot-argocd-cloudspace/          # This repo - generic only
-├── cloudspace/                  # K8s cluster
-├── cluster-base/                # ArgoCD Helm
-└── argocd-bootstrap/            # Generic App CRD
-
-your-app-repo/                   # Downstream - app-specific
-├── infrastructure/modules/
-│   └── app-prereqs/             # Local module for namespaces + secrets
-└── argocd/applications/
-    └── ...                      # ArgoCD-managed manifests
-```
-
-## Deployment Order
+This repo enables a clean 2-stage GitOps architecture:
 
 ```
-1. cloudspace       -> Creates Kubernetes cluster
-2. cluster-base     -> Installs ArgoCD via Helm
-3. [local prereqs]  -> Creates app-specific namespaces + secrets (downstream)
-4. argocd-bootstrap -> Creates ArgoCD Application
-                       └─> ArgoCD syncs your application
+Stage 1: cloudspace     → Creates Kubernetes cluster
+Stage 2: cluster-base   → Installs ArgoCD + Bootstrap Application
+                          └─> ArgoCD syncs from Git:
+                              ├── prereqs/
+                              │   ├── namespaces.yaml
+                              │   └── external-secrets.yaml
+                              └── applications/
+                                  └── my-app.yaml
 ```
+
+After Stage 2, ArgoCD manages everything else from Git manifests.
 
 ## Usage with Terragrunt
 
-These modules are designed to be used with Terragrunt for managing live infrastructure.
-
-### Version Management
-
-Create a `versions.hcl` file to centralize module version control:
+### versions.hcl
 
 ```hcl
-# infrastructure/live/versions.hcl
 locals {
-  tf_modules_base    = "github.com/Matchpoint-AI/spot-argocd-cloudspace.git"
-  tf_modules_repo    = "git::https://${local.tf_modules_base}"
-  tf_modules_version = "v1.2.0"
+  remote_modules  = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git"
+  modules_version = "v4.0.0"
 }
 ```
 
-### Using Modules
+### 1-cloudspace/terragrunt.hcl
 
 ```hcl
-# terragrunt.hcl
-locals {
-  source_config = read_terragrunt_config(find_in_parent_folders("versions.hcl"))
+terraform {
+  source = "${local.versions.locals.remote_modules}//cloudspace?ref=${local.versions.locals.modules_version}"
 }
 
+inputs = {
+  cluster_name         = "my-cluster"
+  region               = "us-central-dfw-1"
+  rackspace_spot_token = get_env("RACKSPACE_SPOT_TOKEN")
+}
+```
+
+### 2-cluster-base/terragrunt.hcl
+
+```hcl
 terraform {
-  source = "${local.source_config.locals.tf_modules_repo}//cloudspace?ref=${local.source_config.locals.tf_modules_version}"
+  source = "${local.versions.locals.remote_modules}//cluster-base?ref=${local.versions.locals.modules_version}"
+}
+
+inputs = {
+  cluster_endpoint       = dependency.cloudspace.outputs.cluster_endpoint
+  cluster_ca_certificate = dependency.cloudspace.outputs.cluster_ca_certificate
+  cluster_token          = dependency.cloudspace.outputs.cluster_token
+
+  # Enable bootstrap Application
+  bootstrap_enabled         = true
+  bootstrap_app_name        = "my-app-bootstrap"
+  bootstrap_repo_url        = "https://github.com/my-org/my-app"
+  bootstrap_sync_path       = "argocd"
+  bootstrap_target_revision = "main"
 }
 ```
 
@@ -71,7 +76,7 @@ terraform {
 
 ```hcl
 module "cloudspace" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cloudspace?ref=v1.2.0"
+  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cloudspace?ref=v4.0.0"
 
   cluster_name         = "my-cluster"
   region               = "us-central-dfw-1"
@@ -79,32 +84,18 @@ module "cloudspace" {
 }
 
 module "cluster_base" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v1.2.0"
+  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v4.0.0"
 
   cluster_endpoint       = module.cloudspace.cluster_endpoint
   cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
   cluster_token          = module.cloudspace.cluster_token
+
+  bootstrap_enabled         = true
+  bootstrap_app_name        = "my-app-bootstrap"
+  bootstrap_repo_url        = "https://github.com/my-org/my-app"
+  bootstrap_sync_path       = "argocd"
+  bootstrap_target_revision = "main"
 }
-
-module "argocd_bootstrap" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//argocd-bootstrap?ref=v1.2.0"
-
-  cluster_endpoint       = module.cloudspace.cluster_endpoint
-  cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
-  cluster_token          = module.cloudspace.cluster_token
-  application_name       = "my-app-bootstrap"
-  repo_url               = "https://github.com/your-org/your-app-repo"
-  sync_path              = "argocd/applications"
-  target_revision        = "main"
-}
-```
-
-## Local Development
-
-For local testing, use `--terragrunt-source` to override the remote source:
-
-```bash
-terragrunt plan --terragrunt-source ../../../spot-argocd-cloudspace//cloudspace
 ```
 
 ## License

@@ -1,6 +1,10 @@
 # Cluster Base Module
 #
-# Installs ArgoCD on the cluster using kubeconfig from cloudspace module.
+# Installs ArgoCD on the cluster and optionally creates a bootstrap Application.
+# This follows the "App of Apps" GitOps pattern where:
+# 1. Terraform creates the cluster (cloudspace module)
+# 2. This module installs ArgoCD + creates bootstrap Application
+# 3. ArgoCD syncs and manages everything else from Git
 
 terraform {
   required_version = ">= 1.5.0"
@@ -71,4 +75,48 @@ resource "helm_release" "argocd" {
   })]
 
   depends_on = [kubernetes_namespace_v1.argocd]
+}
+
+# -----------------------------------------------------------------------------
+# Bootstrap ArgoCD Application (Optional)
+# Creates an Application that syncs from a Git repository.
+# ArgoCD will then manage all other resources from Git manifests.
+# -----------------------------------------------------------------------------
+resource "kubernetes_manifest" "bootstrap_application" {
+  count = var.bootstrap_enabled ? 1 : 0
+
+  manifest = {
+    apiVersion = "argoproj.io/v1alpha1"
+    kind       = "Application"
+    metadata = {
+      name      = var.bootstrap_app_name
+      namespace = var.argocd_namespace
+      finalizers = [
+        "resources-finalizer.argocd.argoproj.io"
+      ]
+    }
+    spec = {
+      project = var.argocd_project
+      source = {
+        repoURL        = var.bootstrap_repo_url
+        targetRevision = var.bootstrap_target_revision
+        path           = var.bootstrap_sync_path
+      }
+      destination = {
+        server    = "https://kubernetes.default.svc"
+        namespace = var.argocd_namespace
+      }
+      syncPolicy = {
+        automated = {
+          prune    = var.bootstrap_auto_prune
+          selfHeal = var.bootstrap_self_heal
+        }
+        syncOptions = [
+          "CreateNamespace=true"
+        ]
+      }
+    }
+  }
+
+  depends_on = [helm_release.argocd]
 }

@@ -34,12 +34,6 @@ jobs:
           terraform init -backend=false
           terraform validate
 
-      - name: Validate argocd-bootstrap module
-        working-directory: argocd-bootstrap
-        run: |
-          terraform init -backend=false
-          terraform validate
-
       - name: Write job summary
         if: success()
         run: |
@@ -49,4 +43,3 @@ jobs:
           echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
           echo "| cloudspace | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
           echo "| cluster-base | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
-          echo "| argocd-bootstrap | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
