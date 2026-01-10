@@ -1,24 +1,8 @@
 # Cluster Base Module - Input Variables
-
-# -----------------------------------------------------------------------------
-# Cluster Authentication
-# -----------------------------------------------------------------------------
-variable "cluster_endpoint" {
-  description = "Kubernetes API server endpoint"
-  type        = string
-}
-
-variable "cluster_ca_certificate" {
-  description = "Base64-encoded cluster CA certificate"
-  type        = string
-  sensitive   = true
-}
-
-variable "cluster_token" {
-  description = "Authentication token for the cluster"
-  type        = string
-  sensitive   = true
-}
+#
+# NOTE: Cluster authentication (endpoint, CA cert, token) is configured via
+# provider blocks in the calling code, not as module variables.
+# See README.md for terragrunt generate block example.
 
 # -----------------------------------------------------------------------------
 # ArgoCD Helm Configuration
