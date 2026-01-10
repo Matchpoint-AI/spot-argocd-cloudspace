@@ -5,6 +5,9 @@
 # 1. Terraform creates the cluster (cloudspace module)
 # 2. This module installs ArgoCD + creates bootstrap Application
 # 3. ArgoCD syncs and manages everything else from Git
+#
+# IMPORTANT: Providers must be configured by the caller (e.g., terragrunt generate block).
+# This module does NOT contain provider blocks to avoid connection issues during init.
 
 terraform {
   required_version = ">= 1.5.0"
@@ -21,22 +24,17 @@ terraform {
   }
 }
 
-# -----------------------------------------------------------------------------
-# Kubernetes Provider Configuration
-# -----------------------------------------------------------------------------
-provider "kubernetes" {
-  host                   = var.cluster_endpoint
-  cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
-  token                  = var.cluster_token
-}
-
-provider "helm" {
-  kubernetes = {
-    host                   = var.cluster_endpoint
-    cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
-    token                  = var.cluster_token
-  }
-}
+# Provider configuration is expected from caller via:
+# - Terragrunt generate block, or
+# - Root module provider blocks
+#
+# Required configuration:
+#   provider "kubernetes" {
+#     host                   = <cluster_endpoint>
+#     cluster_ca_certificate = base64decode(<cluster_ca_certificate>)
+#     token                  = <cluster_token>
+#   }
+#   provider "helm" { ... same configuration ... }
 
 # -----------------------------------------------------------------------------
 # ArgoCD Namespace

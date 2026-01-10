@@ -11,27 +11,71 @@ This module provides a complete GitOps foundation:
 
 ## Usage
 
-### Basic (ArgoCD only)
+**IMPORTANT:** This module requires provider configuration from the caller. Use a terragrunt
+`generate` block or root module provider blocks to configure the kubernetes and helm providers.
+
+### Terragrunt Usage (Recommended)
 
 ```hcl
-module "cluster_base" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v4.0.0"
+# terragrunt.hcl
+terraform {
+  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v4.1.0"
+}
 
-  cluster_endpoint       = module.cloudspace.cluster_endpoint
-  cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
-  cluster_token          = module.cloudspace.cluster_token
+dependency "cloudspace" {
+  config_path = "../1-cloudspace"
+}
+
+# Generate provider configuration - required for this module
+generate "providers" {
+  path      = "providers.tf"
+  if_exists = "overwrite_terragrunt"
+  contents  = <<-EOF
+    provider "kubernetes" {
+      host                   = "${dependency.cloudspace.outputs.cluster_endpoint}"
+      cluster_ca_certificate = base64decode("${dependency.cloudspace.outputs.cluster_ca_certificate}")
+      token                  = "${dependency.cloudspace.outputs.cluster_token}"
+    }
+    provider "helm" {
+      kubernetes {
+        host                   = "${dependency.cloudspace.outputs.cluster_endpoint}"
+        cluster_ca_certificate = base64decode("${dependency.cloudspace.outputs.cluster_ca_certificate}")
+        token                  = "${dependency.cloudspace.outputs.cluster_token}"
+      }
+    }
+  EOF
+}
+
+inputs = {
+  # Enable bootstrap Application
+  bootstrap_enabled         = true
+  bootstrap_app_name        = "my-app-bootstrap"
+  bootstrap_repo_url        = "https://github.com/my-org/my-app"
+  bootstrap_sync_path       = "argocd"
+  bootstrap_target_revision = "main"
 }
 ```
 
-### With Bootstrap Application (Recommended)
+### Plain Terraform Usage
 
 ```hcl
-module "cluster_base" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v4.0.0"
+# Configure providers in your root module
+provider "kubernetes" {
+  host                   = module.cloudspace.cluster_endpoint
+  cluster_ca_certificate = base64decode(module.cloudspace.cluster_ca_certificate)
+  token                  = module.cloudspace.cluster_token
+}
 
-  cluster_endpoint       = module.cloudspace.cluster_endpoint
-  cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
-  cluster_token          = module.cloudspace.cluster_token
+provider "helm" {
+  kubernetes {
+    host                   = module.cloudspace.cluster_endpoint
+    cluster_ca_certificate = base64decode(module.cloudspace.cluster_ca_certificate)
+    token                  = module.cloudspace.cluster_token
+  }
+}
+
+module "cluster_base" {
+  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cluster-base?ref=v4.1.0"
 
   # Enable bootstrap Application
   bootstrap_enabled         = true
@@ -59,11 +103,10 @@ Stage 2: cluster-base    → Installs ArgoCD + Bootstrap Application
 
 ## Inputs
 
+**Note:** Cluster authentication is configured via provider blocks, not module inputs.
+
 | Name | Description | Type | Default | Required |
 |------|-------------|------|---------|:--------:|
-| cluster_endpoint | Kubernetes API server endpoint | `string` | n/a | yes |
-| cluster_ca_certificate | Base64-encoded cluster CA certificate | `string` | n/a | yes |
-| cluster_token | Authentication token for the cluster | `string` | n/a | yes |
 | argocd_chart_version | ArgoCD Helm chart version | `string` | `"5.51.6"` | no |
 | argocd_namespace | Kubernetes namespace for ArgoCD | `string` | `"argocd"` | no |
 | bootstrap_enabled | Enable bootstrap ArgoCD Application | `bool` | `false` | no |
