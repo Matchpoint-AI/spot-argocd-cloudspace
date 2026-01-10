@@ -17,7 +17,7 @@ This follows the "App of Apps" GitOps pattern where:
 
 ```hcl
 module "argocd_bootstrap" {
-  source = "git::https://github.com/Matchpoint-AI/rackspace-spot-terraform-modules.git//argocd-bootstrap?ref=v1.1.0"
+  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//argocd-bootstrap?ref=v3.0.0"
 
   # Cluster authentication (from cloudspace module)
   cluster_endpoint       = module.cloudspace.cluster_endpoint
@@ -56,31 +56,19 @@ module "argocd_bootstrap" {
 | application_namespace | Namespace of the ArgoCD Application |
 | sync_source | ArgoCD sync source configuration (repo_url, target_revision, path) |
 
-## Example: GitHub Actions Runners
+## Example Repository Structure
 
-For GitHub Actions runners, the synced repository should contain:
+The synced repository should contain ArgoCD Application manifests:
 
 ```
 argocd/
 ├── applications/
-│   ├── arc-prereqs.yaml      # Namespaces + ExternalSecrets
-│   ├── arc-controller.yaml   # ARC controller Helm chart
-│   └── arc-runners.yaml      # Runner scale set Helm chart
+│   ├── app-prereqs.yaml    # Namespaces, ConfigMaps, Secrets
+│   ├── app-backend.yaml    # Backend service Helm chart
+│   └── app-frontend.yaml   # Frontend service Helm chart
 ```
 
-The `arc-prereqs.yaml` would create:
-- `arc-systems` namespace for the controller
-- `arc-runners` namespace for runner pods
-- ExternalSecret to pull GitHub token from secret manager
-
-## Migration from argocd-apps
-
-If migrating from the `argocd-apps` module:
-
-1. Create ArgoCD manifests for namespaces and secrets in your app repo
-2. Update terragrunt to use `argocd-bootstrap` instead of `argocd-apps`
-3. Remove `github_token` from terragrunt inputs
-4. Run `terraform plan` to verify no infrastructure changes
+Each YAML file is an ArgoCD Application that points to your Helm charts or Kubernetes manifests.
 
 ## Requirements
 
