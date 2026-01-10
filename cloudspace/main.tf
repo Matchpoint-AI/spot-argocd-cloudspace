@@ -182,46 +182,70 @@ resource "terraform_data" "wait_for_cluster" {
 # Max wait: 60 attempts * 30s = 30 minutes
 
 resource "terraform_data" "wait_for_nodepool" {
-  # triggers_replace forces re-creation when nodepool changes
-  triggers_replace = [spot_spotnodepool.this.name]
+  # triggers_replace forces re-creation when nodepool or scaling config changes.
+  # This ensures we wait for Ready status after ANY scaling operation, not just
+  # nodepool recreation. Without this, scaling changes can leave the cloudspace
+  # in "Provisioning" state and cause downstream modules to fail.
+  triggers_replace = [
+    spot_spotnodepool.this.name,
+    var.min_nodes,
+    var.max_nodes,
+    var.bid_price,
+  ]
 
   provisioner "local-exec" {
     command = <<-EOT
       set -e
+      CLUSTER_NAME="${var.cluster_name}"
       NODEPOOL_NAME="${spot_spotnodepool.this.name}"
       MAX_ATTEMPTS=${var.nodepool_poll_max_attempts}
       SLEEP_INTERVAL=${var.nodepool_poll_interval}
       SPOTCTL=$(command -v spotctl || echo "/tmp/spotctl")
 
-      echo "Waiting for nodepool $NODEPOOL_NAME (max 30 minutes)..."
+      echo "Waiting for nodepool $NODEPOOL_NAME and cloudspace $CLUSTER_NAME (max 30 minutes)..."
 
       for i in $(seq 1 $MAX_ATTEMPTS); do
-        if STATUS_JSON=$($SPOTCTL nodepools spot get --name "$NODEPOOL_NAME" --output json 2>&1); then
-          STATUS=$(echo "$STATUS_JSON" | jq -r '.status // "Unknown"')
-
-          case "$STATUS" in
+        # Check nodepool status
+        NODEPOOL_READY=false
+        if NODEPOOL_JSON=$($SPOTCTL nodepools spot get --name "$NODEPOOL_NAME" --output json 2>&1); then
+          NODEPOOL_STATUS=$(echo "$NODEPOOL_JSON" | jq -r '.status // "Unknown"')
+          case "$NODEPOOL_STATUS" in
             "Ready"|"Healthy"|"Running"|"Active"|"Fulfilled")
-              echo "✅ Nodepool ready: $STATUS"
-              exit 0
-              ;;
-            "Provisioning"|"Creating"|"Pending"|"Scaling")
-              echo "[$i/$MAX_ATTEMPTS] Status: $STATUS"
+              NODEPOOL_READY=true
               ;;
             "Failed"|"Error"|"Degraded")
-              echo "❌ Nodepool failed: $STATUS"
+              echo "❌ Nodepool failed: $NODEPOOL_STATUS"
               exit 1
               ;;
-            *)
-              echo "[$i/$MAX_ATTEMPTS] Status: $STATUS (unknown, continuing...)"
+          esac
+        fi
+
+        # Check cloudspace status (scaling can put cloudspace into Provisioning)
+        CLOUDSPACE_READY=false
+        if CLOUDSPACE_JSON=$($SPOTCTL cloudspaces get --name "$CLUSTER_NAME" --output json 2>&1); then
+          CLOUDSPACE_STATUS=$(echo "$CLOUDSPACE_JSON" | jq -r '.status // "Unknown"')
+          case "$CLOUDSPACE_STATUS" in
+            "Ready"|"Healthy"|"Running"|"Active"|"fulfilled")
+              CLOUDSPACE_READY=true
+              ;;
+            "Failed"|"Error"|"Degraded")
+              echo "❌ Cloudspace failed: $CLOUDSPACE_STATUS"
+              exit 1
               ;;
           esac
-        else
-          echo "[$i/$MAX_ATTEMPTS] API call failed, retrying..."
         fi
+
+        # Both must be ready
+        if [ "$NODEPOOL_READY" = "true" ] && [ "$CLOUDSPACE_READY" = "true" ]; then
+          echo "✅ Nodepool ($NODEPOOL_STATUS) and cloudspace ($CLOUDSPACE_STATUS) ready"
+          exit 0
+        fi
+
+        echo "[$i/$MAX_ATTEMPTS] Nodepool: $NODEPOOL_STATUS, Cloudspace: $CLOUDSPACE_STATUS"
         sleep $SLEEP_INTERVAL
       done
 
-      echo "❌ Timeout waiting for nodepool"
+      echo "❌ Timeout waiting for nodepool and cloudspace"
       exit 1
     EOT
   }
