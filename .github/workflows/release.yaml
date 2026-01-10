@@ -1,0 +1,74 @@
+name: "🏷️ Release"
+
+# Automated semantic versioning and tagging for Terraform modules.
+#
+# Trigger: Push to main branch
+# Output: Git tag following semver (vX.Y.Z)
+#
+# Commit message patterns:
+#   - (MAJOR) - Bump major version (breaking changes)
+#   - (MINOR) - Bump minor version (new features)
+#   - Default - Bump patch version (bug fixes)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    name: Create Release Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calculate semantic version
+        id: version
+        uses: paulhatch/semantic-version@v5.3.0
+        with:
+          tag_prefix: "v"
+          major_pattern: "(MAJOR)"
+          minor_pattern: "(MINOR)"
+          version_format: "${major}.${minor}.${patch}"
+
+      - name: Create git tag
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.version.outputs.version_tag }}"
+
+          # Check if tag already exists
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping creation"
+            echo "skipped=true" >> $GITHUB_OUTPUT
+          else
+            echo "Creating new tag $TAG"
+            git config user.name "GitHub Action"
+            git config user.email "action@github.com"
+            git tag -a "$TAG" -m "Release $TAG"
+            git push origin "$TAG"
+            echo "skipped=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Write job summary
+        run: |
+          echo "## 🏷️ Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Version | \`${{ steps.version.outputs.version_tag }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Major | ${{ steps.version.outputs.major }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Minor | ${{ steps.version.outputs.minor }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Patch | ${{ steps.version.outputs.patch }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Usage" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`hcl" >> $GITHUB_STEP_SUMMARY
+          echo "# In your terragrunt.hcl or terraform module source:" >> $GITHUB_STEP_SUMMARY
+          echo "source = \"git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//argocd-bootstrap?ref=${{ steps.version.outputs.version_tag }}\"" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
