@@ -46,6 +46,12 @@ jobs:
           terraform init -backend=false
           terraform validate
 
+      - name: Validate arc-prereqs module
+        working-directory: arc-prereqs
+        run: |
+          terraform init -backend=false
+          terraform validate
+
       - name: Write job summary
         if: success()
         run: |
@@ -57,3 +63,4 @@ jobs:
           echo "| cluster-base | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
           echo "| argocd-apps | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
           echo "| argocd-bootstrap | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
+          echo "| arc-prereqs | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
