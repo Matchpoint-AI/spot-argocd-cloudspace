@@ -1,0 +1,59 @@
+name: "🔍 CI"
+
+# Continuous integration for Terraform modules.
+# Validates all modules on pull requests.
+
+on:
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  validate:
+    name: Validate Terraform Modules
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.5.0"
+
+      - name: Validate cloudspace module
+        working-directory: cloudspace
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate cluster-base module
+        working-directory: cluster-base
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate argocd-apps module
+        working-directory: argocd-apps
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Validate argocd-bootstrap module
+        working-directory: argocd-bootstrap
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+      - name: Write job summary
+        if: success()
+        run: |
+          echo "## ✅ All Modules Validated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Module | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| cloudspace | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
+          echo "| cluster-base | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
+          echo "| argocd-apps | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
+          echo "| argocd-bootstrap | ✅ Valid |" >> $GITHUB_STEP_SUMMARY
