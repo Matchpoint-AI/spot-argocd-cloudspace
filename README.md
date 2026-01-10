@@ -9,7 +9,6 @@ Generic Terraform modules for deploying ArgoCD-managed workloads on Rackspace Sp
 | [cloudspace](./cloudspace) | Rackspace Spot managed Kubernetes cluster and node pool |
 | [cluster-base](./cluster-base) | ArgoCD installation via Helm |
 | [argocd-bootstrap](./argocd-bootstrap) | Generic ArgoCD Application bootstrap (App-of-Apps pattern) |
-| [argocd-apps](./argocd-apps) | Legacy module (deprecated - use argocd-bootstrap instead) |
 
 ## Architecture
 
