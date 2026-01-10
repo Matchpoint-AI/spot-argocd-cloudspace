@@ -74,8 +74,16 @@ resource "spot_spotnodepool" "this" {
     max_nodes = var.max_nodes
   }
 
-  # No prevent_destroy - nodepool replacement is acceptable (5-10 min)
-  # compared to cloudspace recreation (50-60 min)
+  lifecycle {
+    # Ignore volatile computed fields that change between plan and apply.
+    # The Rackspace Spot provider has a bug where these fields can change
+    # during apply, causing "Provider produced inconsistent result" errors.
+    ignore_changes = [
+      won_count,
+      bid_status,
+      desired_server_count,
+    ]
+  }
 
   depends_on = [spot_cloudspace.this]
 }
