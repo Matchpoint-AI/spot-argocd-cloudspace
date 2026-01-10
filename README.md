@@ -1,6 +1,6 @@
 # Spot ArgoCD Cloudspace
 
-Terraform modules for deploying GitHub Actions runners on Rackspace Spot infrastructure with ArgoCD GitOps.
+Generic Terraform modules for deploying ArgoCD-managed workloads on Rackspace Spot infrastructure.
 
 ## Modules
 
@@ -8,18 +8,34 @@ Terraform modules for deploying GitHub Actions runners on Rackspace Spot infrast
 |--------|-------------|
 | [cloudspace](./cloudspace) | Rackspace Spot managed Kubernetes cluster and node pool |
 | [cluster-base](./cluster-base) | ArgoCD installation via Helm |
-| [arc-prereqs](./arc-prereqs) | ARC namespaces and GitHub token secret |
 | [argocd-bootstrap](./argocd-bootstrap) | Generic ArgoCD Application bootstrap (App-of-Apps pattern) |
-| [argocd-apps](./argocd-apps) | Bootstrap ArgoCD Application for ARC deployment (legacy) |
+| [argocd-apps](./argocd-apps) | Legacy module (deprecated - use argocd-bootstrap instead) |
+
+## Architecture
+
+This repo contains **generic** infrastructure modules only. Application-specific resources (namespaces, secrets, configs) should live in the downstream application repositories.
+
+```
+spot-argocd-cloudspace/          # This repo - generic only
+├── cloudspace/                  # K8s cluster
+├── cluster-base/                # ArgoCD Helm
+└── argocd-bootstrap/            # Generic App CRD
+
+your-app-repo/                   # Downstream - app-specific
+├── infrastructure/modules/
+│   └── app-prereqs/             # Local module for namespaces + secrets
+└── argocd/applications/
+    └── ...                      # ArgoCD-managed manifests
+```
 
 ## Deployment Order
 
 ```
 1. cloudspace       -> Creates Kubernetes cluster
 2. cluster-base     -> Installs ArgoCD via Helm
-3. arc-prereqs      -> Creates namespaces + GitHub secret
+3. [local prereqs]  -> Creates app-specific namespaces + secrets (downstream)
 4. argocd-bootstrap -> Creates ArgoCD Application
-                       └─> ArgoCD syncs ARC controller + runners
+                       └─> ArgoCD syncs your application
 ```
 
 ## Usage with Terragrunt
@@ -52,26 +68,13 @@ terraform {
 }
 ```
 
-### Upgrading Versions
-
-To upgrade all modules, change the version in `versions.hcl`:
-
-```diff
-locals {
-  tf_modules_base    = "github.com/Matchpoint-AI/spot-argocd-cloudspace.git"
-  tf_modules_repo    = "git::https://${local.tf_modules_base}"
-- tf_modules_version = "v1.2.0"
-+ tf_modules_version = "v1.3.0"
-}
-```
-
 ## Direct Terraform Usage
 
 ```hcl
 module "cloudspace" {
   source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//cloudspace?ref=v1.2.0"
 
-  cluster_name         = "my-runners"
+  cluster_name         = "my-cluster"
   region               = "us-central-dfw-1"
   rackspace_spot_token = var.rackspace_spot_token
 }
@@ -84,23 +87,14 @@ module "cluster_base" {
   cluster_token          = module.cloudspace.cluster_token
 }
 
-module "arc_prereqs" {
-  source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//arc-prereqs?ref=v1.2.0"
-
-  cluster_endpoint       = module.cloudspace.cluster_endpoint
-  cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
-  cluster_token          = module.cloudspace.cluster_token
-  github_token           = var.github_token
-}
-
 module "argocd_bootstrap" {
   source = "git::https://github.com/Matchpoint-AI/spot-argocd-cloudspace.git//argocd-bootstrap?ref=v1.2.0"
 
   cluster_endpoint       = module.cloudspace.cluster_endpoint
   cluster_ca_certificate = module.cloudspace.cluster_ca_certificate
   cluster_token          = module.cloudspace.cluster_token
-  application_name       = "github-runners-bootstrap"
-  repo_url               = "https://github.com/your-org/your-runners-repo"
+  application_name       = "my-app-bootstrap"
+  repo_url               = "https://github.com/your-org/your-app-repo"
   sync_path              = "argocd/applications"
   target_revision        = "main"
 }
