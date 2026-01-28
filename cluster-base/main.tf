@@ -18,6 +18,10 @@ terraform {
       source  = "hashicorp/helm"
       version = ">= 2.11.0"
     }
+    kubectl = {
+      source  = "alekc/kubectl"
+      version = ">= 2.0.0"
+    }
   }
 }
 
@@ -37,6 +41,15 @@ provider "helm" {
     cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
     token                  = var.cluster_token
   }
+}
+
+# kubectl provider for CRD-dependent resources
+# This provider doesn't require CRD validation during plan phase
+provider "kubectl" {
+  host                   = var.cluster_endpoint
+  cluster_ca_certificate = base64decode(var.cluster_ca_certificate)
+  token                  = var.cluster_token
+  load_config_file       = false
 }
 
 # -----------------------------------------------------------------------------
@@ -82,19 +95,20 @@ resource "helm_release" "argocd" {
 # Bootstrap ArgoCD Application (Optional)
 # Creates an Application that syncs from a Git repository.
 # ArgoCD will then manage all other resources from Git manifests.
+#
+# Uses kubectl_manifest instead of kubernetes_manifest to avoid CRD validation
+# during plan phase. This allows fresh clusters without ArgoCD to plan successfully.
 # -----------------------------------------------------------------------------
-resource "kubernetes_manifest" "bootstrap_application" {
+resource "kubectl_manifest" "bootstrap_application" {
   count = var.bootstrap_enabled ? 1 : 0
 
-  manifest = {
+  yaml_body = yamlencode({
     apiVersion = "argoproj.io/v1alpha1"
     kind       = "Application"
     metadata = {
-      name      = var.bootstrap_app_name
-      namespace = var.argocd_namespace
-      finalizers = [
-        "resources-finalizer.argocd.argoproj.io"
-      ]
+      name       = var.bootstrap_app_name
+      namespace  = var.argocd_namespace
+      finalizers = ["resources-finalizer.argocd.argoproj.io"]
     }
     spec = {
       project = var.argocd_project
@@ -112,12 +126,10 @@ resource "kubernetes_manifest" "bootstrap_application" {
           prune    = var.bootstrap_auto_prune
           selfHeal = var.bootstrap_self_heal
         }
-        syncOptions = [
-          "CreateNamespace=true"
-        ]
+        syncOptions = ["CreateNamespace=true"]
       }
     }
-  }
+  })
 
   depends_on = [helm_release.argocd]
 }
